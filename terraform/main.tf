@@ -31,7 +31,6 @@ resource "aws_iam_role" "iam_for_lambda" {
 
 # 3. BUSCAR LA TABLA EXISTENTE (La de tu amigo)
 data "aws_dynamodb_table" "friend_table" {
-  # Según el código que me pasaste de él, se llama así:
   name = "Tabla1" 
 }
 
@@ -47,13 +46,12 @@ resource "aws_lambda_function" "stats_lambda" {
 
   environment {
     variables = {
-      # Aquí le pasamos el nombre real de la tabla donde se guardan los links
       TABLE_NAME = data.aws_dynamodb_table.friend_table.name
     }
   }
 }
 
-# 5. PERMISO PARA LEER ESA TABLA
+# 5. PERMISO PARA LEER Y ESCRIBIR (CORREGIDO ✅)
 resource "aws_iam_role_policy" "lambda_policy" {
   name = "permiso_dynamodb_pedro"
   role = aws_iam_role.iam_for_lambda.id
@@ -65,10 +63,10 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Action = [
           "dynamodb:GetItem",
           "dynamodb:Scan",
-          "dynamodb:Query"
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"  # 👈 ESTA ES LA LÍNEA QUE FALTABA
         ]
         Effect   = "Allow"
-        # Permiso sobre la tabla encontrada
         Resource = data.aws_dynamodb_table.friend_table.arn
       }
     ]
@@ -76,7 +74,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
 }
 
 # ---------------------------------------------------------
-# API GATEWAY (Lo demás sigue igual)
+# API GATEWAY
 # ---------------------------------------------------------
 
 # 6. API GATEWAY
