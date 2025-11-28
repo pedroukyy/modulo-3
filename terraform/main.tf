@@ -9,7 +9,7 @@ data "archive_file" "lambda_zip" {
   output_path = "lambda_function.zip"
 }
 
-# 2. ROL DE SEGURIDAD (Permisos básicos)
+# 2. ROL DE SEGURIDAD
 resource "aws_iam_role" "iam_for_lambda" {
   name = "rol_parcial_modulo_3_pedro"
 
@@ -25,7 +25,17 @@ resource "aws_iam_role" "iam_for_lambda" {
   })
 }
 
-# 3. LA FUNCIÓN LAMBDA (¡AHORA CONECTADA A LA BD!)
+# ---------------------------------------------------------
+# CONEXIÓN CON LA BASE DE DATOS DEL MÓDULO 1
+# ---------------------------------------------------------
+
+# 3. BUSCAR LA TABLA EXISTENTE (La de tu amigo)
+data "aws_dynamodb_table" "friend_table" {
+  # Según el código que me pasaste de él, se llama así:
+  name = "Tabla1" 
+}
+
+# 4. LA FUNCIÓN LAMBDA (Conectada a "Tabla1")
 resource "aws_lambda_function" "stats_lambda" {
   filename      = "lambda_function.zip"
   function_name = "parcial_modulo_3_stats_pedro"
@@ -35,75 +45,15 @@ resource "aws_lambda_function" "stats_lambda" {
 
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
-  # 👇 AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Enviamos el nombre de la tabla a la Lambda
   environment {
     variables = {
-      TABLE_NAME = aws_dynamodb_table.stats_table.name
+      # Aquí le pasamos el nombre real de la tabla donde se guardan los links
+      TABLE_NAME = data.aws_dynamodb_table.friend_table.name
     }
   }
 }
 
-# 4. API GATEWAY (La URL Pública)
-resource "aws_apigatewayv2_api" "http_api" {
-  name          = "parcial_modulo_3_api"
-  protocol_type = "HTTP"
-  
-  cors_configuration {
-    allow_origins = ["*"]
-    allow_methods = ["GET", "OPTIONS"]
-    allow_headers = ["content-type"]
-  }
-}
-
-# 5. INTEGRACIÓN (Conectar API -> Lambda)
-resource "aws_apigatewayv2_integration" "lambda_integration" {
-  api_id           = aws_apigatewayv2_api.http_api.id
-  integration_type = "AWS_PROXY"
-  integration_uri  = aws_lambda_function.stats_lambda.invoke_arn
-  payload_format_version = "2.0"
-}
-
-# 6. RUTA (GET /stats/{codigo})
-resource "aws_apigatewayv2_route" "stats_route" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "GET /stats/{codigo}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
-}
-
-# 7. DESPLIEGUE AUTOMÁTICO
-resource "aws_apigatewayv2_stage" "default" {
-  api_id      = aws_apigatewayv2_api.http_api.id
-  name        = "$default"
-  auto_deploy = true
-}
-
-# 8. PERMISO FINAL (Dejar pasar a la API)
-resource "aws_lambda_permission" "api_gw" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.stats_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
-}
-
-# 9. OUTPUT (Te dará la URL al terminar)
-output "api_endpoint" {
-  value = aws_apigatewayv2_stage.default.invoke_url
-}
-
-# 10. BASE DE DATOS DYNAMODB
-resource "aws_dynamodb_table" "stats_table" {
-  name           = "parcial_modulo_3_tabla_pedro"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "codigo"
-
-  attribute {
-    name = "codigo"
-    type = "S" # String
-  }
-}
-
-# 11. PERMISO PARA QUE LA LAMBDA LEA LA TABLA
+# 5. PERMISO PARA LEER ESA TABLA
 resource "aws_iam_role_policy" "lambda_policy" {
   name = "permiso_dynamodb_pedro"
   role = aws_iam_role.iam_for_lambda.id
@@ -118,8 +68,61 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:Query"
         ]
         Effect   = "Allow"
-        Resource = aws_dynamodb_table.stats_table.arn
+        # Permiso sobre la tabla encontrada
+        Resource = data.aws_dynamodb_table.friend_table.arn
       }
     ]
   })
+}
+
+# ---------------------------------------------------------
+# API GATEWAY (Lo demás sigue igual)
+# ---------------------------------------------------------
+
+# 6. API GATEWAY
+resource "aws_apigatewayv2_api" "http_api" {
+  name          = "parcial_modulo_3_api"
+  protocol_type = "HTTP"
+  
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "OPTIONS"]
+    allow_headers = ["content-type"]
+  }
+}
+
+# 7. INTEGRACIÓN
+resource "aws_apigatewayv2_integration" "lambda_integration" {
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+  integration_uri  = aws_lambda_function.stats_lambda.invoke_arn
+  payload_format_version = "2.0"
+}
+
+# 8. RUTA
+resource "aws_apigatewayv2_route" "stats_route" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /stats/{codigo}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+}
+
+# 9. STAGE
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.http_api.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+# 10. PERMISOS API GATEWAY
+resource "aws_lambda_permission" "api_gw" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.stats_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
+# 11. OUTPUT
+output "api_endpoint" {
+  value = aws_apigatewayv2_stage.default.invoke_url
 }
