@@ -1,0 +1,33 @@
+name: Deploy Backend Modulo 3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**' # Solo se activa si cambias código de la Lambda
+
+jobs:
+  deploy_lambda:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Zip Lambda Function
+      run: |
+        cd src
+        zip -r ../lambda_function.zip .
+        cd ..
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Update Lambda Code
+      run: |
+        aws lambda update-function-code --function-name parcial_modulo_3_stats_pedro --zip-file fileb://lambda_function.zip

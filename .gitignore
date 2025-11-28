@@ -1,0 +1,19 @@
+# --- Terraform (NUNCA SUBIR ESTO) ---
+.terraform/
+terraform/.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+*.tfvars
+
+# --- Archivos generados (Zips) ---
+*.zip
+terraform/*.zip
+
+# --- Node.js (Por si acaso) ---
+node_modules/
+npm-debug.log
+
+# --- Sistema ---
+.DS_Store
+Thumbs.db
