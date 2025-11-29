@@ -6,39 +6,38 @@ const docClient = DynamoDBDocumentClient.from(client);
 
 exports.handler = async (event) => {
     const codigo = event.pathParameters ? event.pathParameters.codigo : "desconocido";
+    
+    const queryParams = event.queryStringParameters || {};
+    const esVisitaReal = queryParams.es_visita === 'true';
+
     const tableName = process.env.TABLE_NAME;
 
-    console.log(`Procesando link: ${codigo}`);
+    console.log(`Procesando link: ${codigo} | ¿Es Visita?: ${esVisitaReal}`);
 
     try {
-        // ------------------------------------------------------------------
-        // 1. REGISTRAR VISITA EN EL HISTORIAL (Real Time)
-        // ------------------------------------------------------------------
-        const timestampAhora = new Date().toISOString(); // Ej: "2025-11-28T14:30:00.000Z"
+        if (esVisitaReal) {
+            const timestampAhora = new Date().toISOString(); 
 
-        try {
-            await docClient.send(new UpdateCommand({
-                TableName: tableName,
-                Key: { short_id: codigo },
-                // Aquí está el truco:
-                // 1. Sumamos 1 al contador total
-                // 2. Agregamos la fecha actual a la lista 'historial'
-                UpdateExpression: "SET visitas = if_not_exists(visitas, :start) + :inc, historial = list_append(if_not_exists(historial, :empty_list), :new_entry)",
-                ExpressionAttributeValues: {
-                    ":inc": 1,
-                    ":start": 0,
-                    ":empty_list": [],
-                    ":new_entry": [timestampAhora] // Guardamos la fecha exacta
-                }
-            }));
-            console.log("¡Visita e historial registrados!");
-        } catch (err) {
-            console.log("Error escribiendo historial (pero seguimos):", err.message);
+            try {
+                await docClient.send(new UpdateCommand({
+                    TableName: tableName,
+                    Key: { short_id: codigo },
+                    UpdateExpression: "SET visitas = if_not_exists(visitas, :start) + :inc, historial = list_append(if_not_exists(historial, :empty_list), :new_entry)",
+                    ExpressionAttributeValues: {
+                        ":inc": 1,
+                        ":start": 0,
+                        ":empty_list": [],
+                        ":new_entry": [timestampAhora] 
+                    }
+                }));
+                console.log("¡Visita e historial registrados correctamente!");
+            } catch (err) {
+                console.log("Error escribiendo historial (pero seguimos):", err.message);
+            }
+        } else {
+            console.log("Modo lectura: No se alteró el contador.");
         }
 
-        // ------------------------------------------------------------------
-        // 2. LEER DATOS
-        // ------------------------------------------------------------------
         const command = new GetCommand({
             TableName: tableName,
             Key: { short_id: codigo }
@@ -55,7 +54,6 @@ exports.handler = async (event) => {
             };
         }
 
-        // Devolvemos todo el historial crudo al frontend para que él lo procese
         const respuestaData = {
             codigo: item.short_id,
             urlOriginal: item.long_url,
